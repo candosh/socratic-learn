@@ -1,7 +1,42 @@
 import { BookOpen, FileUp, Landmark, Loader2, Search, Send, ScrollText, Scroll } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+
+const SOCRATES_MOTIONS = {
+  talking: {
+    loop: true,
+    repeat: 3,
+    frames: [
+      "/motion-assets/talking/frame-01.png",
+      "/motion-assets/talking/frame-02.png",
+      "/motion-assets/talking/frame-03.png",
+      "/motion-assets/talking/frame-02.png",
+    ],
+  },
+  correct: {
+    loop: true,
+    repeat: 3,
+    frames: [
+      "/motion-assets/correct/frame-00.png",
+      "/motion-assets/correct/frame-01.png",
+      "/motion-assets/correct/frame-02.png",
+      "/motion-assets/correct/frame-03.png",
+      "/motion-assets/correct/frame-04.png",
+      "/motion-assets/correct/frame-05.png",
+      "/motion-assets/correct/frame-06.png",
+    ],
+  },
+  failure: {
+    loop: true,
+    repeat: 3,
+    frames: [
+      "/motion-assets/failure/frame-01.png",
+      "/motion-assets/failure/frame-02.png",
+      "/motion-assets/failure/frame-03.png",
+    ],
+  },
+};
 
 const initialForm = {
   subject: "",
@@ -19,6 +54,7 @@ export function App() {
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showSufficientEvaluation, setShowSufficientEvaluation] = useState(false);
 
   const concepts = state?.session?.concepts ?? [];
   const answers = state?.session?.answers ?? [];
@@ -26,11 +62,21 @@ export function App() {
   const lastAnswer = state?.last_answer;
   const answeredQuestion = lastAnswer ? state?.session?.questions?.find((question) => question.question_id === lastAnswer.question_id) : null;
   const progress = state ? Math.round((state.current_index / Math.max(state.total_questions, 1)) * 100) : 0;
+  const socratesMotion = getSocratesMotion(lastAnswer?.evaluation?.status);
+  const socratesMotionKey = lastAnswer?.answer_id ?? currentQuestion?.question_id ?? "start";
+  const adviceText = getAdviceText(lastAnswer?.evaluation);
+  const showEvaluationMessage = lastAnswer?.evaluation && !state.completed && (lastAnswer.evaluation.status !== "sufficient" || showSufficientEvaluation);
 
   const currentConcept = useMemo(() => {
     if (!currentQuestion) return null;
     return concepts.find((concept) => concept.concept_id === currentQuestion.concept_id);
   }, [concepts, currentQuestion]);
+
+  useEffect(() => {
+    if (!showSufficientEvaluation) return undefined;
+    const timeout = window.setTimeout(() => setShowSufficientEvaluation(false), 1800);
+    return () => window.clearTimeout(timeout);
+  }, [showSufficientEvaluation, lastAnswer?.answer_id]);
 
   async function startSession(event) {
     event.preventDefault();
@@ -72,6 +118,7 @@ export function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ answer }),
       });
+      setShowSufficientEvaluation(next.last_answer?.evaluation?.status === "sufficient");
       setState(next);
       setAnswer("");
     } catch (err) {
@@ -87,6 +134,7 @@ export function App() {
     setError("");
     try {
       const next = await request(`/api/sessions/${state.session.session_id}/${action}`, { method: "POST" });
+      setShowSufficientEvaluation(false);
       setState(next);
       setAnswer("");
     } catch (err) {
@@ -160,9 +208,9 @@ export function App() {
             <div className="scroll-tab">1단계: 입문</div>
             <h1>지식의 두루마리를 제출하세요</h1>
             <p>공부할 강의 PDF를 제출하면 소크라테스가 두루마리를 해석하여 핵심 개념을 찾아냅니다.</p>
+            {error && <div className="error">{error}</div>}
             {setupForm}
             <div className="notice">텍스트가 포함된 PDF 파일만 지원됩니다. 스캔 이미지 PDF는 분석이 어려울 수 있습니다.</div>
-            {error && <div className="error">{error}</div>}
           </aside>
 
           <div className="start-socrates">
@@ -238,12 +286,12 @@ export function App() {
         </aside>
 
         <div className="study-socrates">
-          <img src="/theme-assets/socrates-start.png" alt="AI 소크라테스" />
+          <AnimatedSocrates motion={socratesMotion} motionKey={socratesMotionKey} />
         </div>
 
         <section className="question-bubble">
           <div className="scroll-tab">소크라테스</div>
-          {lastAnswer?.evaluation && !state.completed ? (
+          {showEvaluationMessage ? (
             <div className="evaluation-message">
               <strong>{Math.round(lastAnswer.evaluation.score * 100)}점 · {statusLabel(lastAnswer.evaluation.status)}</strong>
               <p>{lastAnswer.evaluation.feedback_to_student}</p>
@@ -253,10 +301,10 @@ export function App() {
           )}
         </section>
 
-        {lastAnswer?.evaluation && (
+        {adviceText && (
           <section className="advice-panel dark-panel">
             <div className="dark-title">소크라테스의 조언</div>
-            <p>{lastAnswer.evaluation.socratic_follow_up || lastAnswer.evaluation.feedback_to_student}</p>
+            <p>{adviceText}</p>
           </section>
         )}
 
@@ -332,6 +380,39 @@ function JourneyStep({ icon, title, text }) {
       </div>
     </div>
   );
+}
+
+function AnimatedSocrates({ motion, motionKey }) {
+  const [frameIndex, setFrameIndex] = useState(0);
+
+  useEffect(() => {
+    setFrameIndex(0);
+    if (motion.frames.length <= 1) return undefined;
+
+    const finalFrameIndex = motion.frames.length - 1;
+    const finalLoopFrameIndex = motion.repeat ? motion.frames.length * motion.repeat - 1 : finalFrameIndex;
+    const interval = window.setInterval(() => {
+      setFrameIndex((current) => {
+        if (!motion.loop) return Math.min(current + 1, finalFrameIndex);
+        return Math.min(current + 1, finalLoopFrameIndex);
+      });
+    }, 180);
+
+    return () => window.clearInterval(interval);
+  }, [motion, motionKey]);
+
+  return <img src={motion.frames[frameIndex % motion.frames.length]} alt="AI 소크라테스" />;
+}
+
+function getSocratesMotion(status) {
+  if (status === "sufficient") return SOCRATES_MOTIONS.correct;
+  if (status === "insufficient" || status === "misconception") return SOCRATES_MOTIONS.failure;
+  return SOCRATES_MOTIONS.talking;
+}
+
+function getAdviceText(evaluation) {
+  if (!evaluation || evaluation.status === "sufficient") return null;
+  return evaluation.socratic_follow_up || evaluation.hint || evaluation.improvement_note || null;
 }
 
 function statusLabel(status) {

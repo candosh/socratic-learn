@@ -87,6 +87,36 @@ def test_no_missing_points_forces_sufficient_next_question():
     assert normalized.score >= 0.75
 
 
+def test_sufficient_answer_clears_hint_and_gap_feedback():
+    evaluation = AnswerEvaluation(
+        matched_points=["required point"],
+        missing_points=["required point"],
+        misconceptions=[],
+        score=0.2,
+        status="insufficient",
+        feedback_to_student="핵심은 맞지만 아직 부족한 점이 있어요.",
+        hint="required point를 다시 생각해보세요.",
+        improvement_note="더 보완하세요.",
+        socratic_follow_up="무엇이 부족할까요?",
+        next_action="ask_followup",
+    )
+
+    normalized = normalize_evaluation(
+        evaluation,
+        attempt_number=1,
+        required_points=["required point"],
+        student_answer="required point",
+    )
+
+    assert normalized.status == "sufficient"
+    assert normalized.score == 1
+    assert normalized.hint is None
+    assert normalized.socratic_follow_up is None
+    assert normalized.improvement_note is None
+    assert "부족" not in normalized.feedback_to_student
+    assert "보완" not in normalized.feedback_to_student
+
+
 def test_missing_required_point_keeps_followup_even_when_partially_sufficient():
     evaluation = AnswerEvaluation(
         matched_points=["required point"],

@@ -7,6 +7,8 @@ from .prompts import build_answer_evaluation_prompt
 
 
 MAX_ATTEMPTS_PER_QUESTION = 3
+SEMANTIC_KEYWORD_MATCH_RATIO = 0.55
+DIRECT_ANSWER_KEYWORD_MATCH_RATIO = 0.5
 
 
 def normalize_evaluation(
@@ -45,8 +47,10 @@ def normalize_evaluation(
     if data["status"] == "sufficient":
         data["next_action"] = "next_question"
         data["reveal_missing_points"] = False
+        data["hint"] = None
         data["socratic_follow_up"] = None
         data["improvement_note"] = None
+        _normalize_sufficient_feedback(data)
     elif current_attempt < MAX_ATTEMPTS_PER_QUESTION:
         data["next_action"] = "ask_followup"
         data["reveal_missing_points"] = False
@@ -69,6 +73,30 @@ def _normalize_followup_feedback(data: dict) -> None:
     if not follow_up or _is_similar_text(data["feedback_to_student"], follow_up):
         follow_up = _fallback_follow_up()
     data["socratic_follow_up"] = follow_up
+
+
+def _normalize_sufficient_feedback(data: dict) -> None:
+    if _feedback_mentions_gap(data["feedback_to_student"]):
+        data["feedback_to_student"] = "그대는 이 물음의 핵심을 충분히 붙잡았네. 이제 다음 물음으로 나아가 보게."
+
+
+def _feedback_mentions_gap(feedback: str) -> bool:
+    feedback_norm = _normalize_text(feedback)
+    gap_markers = {
+        "부족",
+        "빠졌",
+        "빠진",
+        "보완",
+        "다시",
+        "힌트",
+        "missing",
+        "insufficient",
+        "lack",
+        "weak",
+        "improve",
+        "try again",
+    }
+    return any(marker in feedback_norm for marker in gap_markers)
 
 
 def _reveals_missing_point(feedback: str, missing_points: list[str]) -> bool:
@@ -111,14 +139,14 @@ def _is_similar_text(left: str, right: str) -> bool:
 
 def _broad_feedback_for_status(status: str) -> str:
     if status == "misconception":
-        return "답변에서 핵심 방향을 다시 점검할 부분이 있어요."
+        return "그대의 답에는 다시 살펴볼 핵심 방향이 있네."
     if status == "partially_sufficient":
-        return "핵심 방향은 일부 잡았어요. 다만 아직 충분하지 않은 부분이 있어요."
-    return "좋은 출발이에요. 다만 핵심 설명이 아직 충분하지 않아요."
+        return "그대는 핵심의 일부를 붙잡았네. 다만 아직 비어 있는 자리가 있네."
+    return "그대의 출발은 보았네. 다만 핵심 설명이 아직 충분하지 않다네."
 
 
 def _fallback_follow_up() -> str:
-    return "이 개념을 실제 상황에 적용하면 어떤 점을 더 설명해야 할까요?"
+    return "이 개념을 실제 상황에 놓아 본다면, 그대는 무엇을 더 설명해야 하겠는가?"
 
 
 def evaluate_answer(
@@ -170,11 +198,16 @@ def _is_semantic_match(required_point: str, candidates: list[str]) -> bool:
             continue
         if required_joined in candidate_joined:
             return True
-        if candidate_joined in required_joined and len(candidate_joined) / len(required_joined) >= 0.8:
-            return True
         required_keywords = set(_keywords(required_point))
         candidate_keywords = set(_keywords(candidate))
-        if required_keywords and len(required_keywords & candidate_keywords) / len(required_keywords) >= 0.7:
+        if (
+            required_keywords
+            and candidate_keywords
+            and candidate_joined in required_joined
+            and len(candidate_joined) / len(required_joined) >= 0.6
+        ):
+            return True
+        if required_keywords and len(required_keywords & candidate_keywords) / len(required_keywords) >= SEMANTIC_KEYWORD_MATCH_RATIO:
             return True
     return False
 
@@ -194,7 +227,8 @@ def _has_obvious_keyword_overlap(required_point: str, student_answer: str) -> bo
 
     overlap = [keyword for keyword in required_keywords if keyword in answer_keywords]
     required_ratio = len(overlap) / len(required_keywords)
-    return len(overlap) >= 2 and required_ratio >= 0.7
+    min_overlap = 1 if len(required_keywords) <= 2 else 2
+    return len(overlap) >= min_overlap and required_ratio >= DIRECT_ANSWER_KEYWORD_MATCH_RATIO
 
 
 def _normalize_text(text: str) -> str:
@@ -220,6 +254,10 @@ def _keywords(text: str) -> list[str]:
         "or",
         "is",
         "are",
+        "point",
+        "required",
+        "missing",
+        "minor",
     }
     keywords: list[str] = []
     for token in _normalize_text(text).split():
