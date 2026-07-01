@@ -514,20 +514,24 @@ h1, h2, h3, p { margin-top: 0; }
   flex: 1; position: relative; min-width: 0; height: 100%;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
 }
-.start-socrates-wrap {
-  /* 화면 너비의 40% 차지 */
-  width: 40vw;
-  max-width: 380px;
-  /* 이미지 비율 약 1:3 → 상반신(상위 33%) 높이 = 40vw × 1.0 */
-  height: min(40vw, 58vh);
+.start-socrates-abs {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 38vw;
+  /* 1:3 이미지에서 상반신(약 47%) = 38vw × 3 × 0.47 ≈ 53vw */
+  height: min(88vh, 53vw);
   overflow: hidden;
-  flex-shrink: 0;
+  z-index: 1;
+  pointer-events: none;
+  user-select: none;
 }
-.start-socrates-wrap img {
+.start-socrates-abs img {
   width: 100%;
   height: auto;
   display: block;
-  filter: drop-shadow(0 8px 24px rgba(0,0,0,0.55));
+  filter: drop-shadow(0 8px 32px rgba(0,0,0,0.55));
 }
 
 /* ── Start screen: dark upload panel ──────────── */

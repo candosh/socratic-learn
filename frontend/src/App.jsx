@@ -482,6 +482,9 @@ export function App() {
         <SvgDefs/>
         <div className="app-bg">
           <div className="app-bg-overlay"/>
+          <div className="start-socrates-abs">
+            <img src="/theme-assets/socrates-start-new.png" alt="AI 소크라테스"/>
+          </div>
           <div className="app-frame">
             <TopBar audioSettings={audioSettings}/>
 
@@ -548,11 +551,7 @@ export function App() {
                 </div>
               </section>
 
-              <div className="start-center">
-                <div className="start-socrates-wrap">
-                  <img src="/theme-assets/socrates-start-new.png" alt="AI 소크라테스"/>
-                </div>
-              </div>
+              <div className="start-center"/>
 
               {/* Info panel */}
               <aside className="start-info">
