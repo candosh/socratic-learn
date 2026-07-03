@@ -557,8 +557,32 @@ h1, h2, h3, p { margin-top: 0; }
     repeating-linear-gradient(90deg, rgba(80,52,20,.035) 0 1px, transparent 1px 11px);
 }
 .slp-panel--upload {
-  padding: 42px 30px 26px;
+  padding: 42px 14px 26px 30px;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.slp-upload-scroll-area {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 16px;
+}
+/* Scrollbar styling for parchment area */
+.slp-upload-scroll-area::-webkit-scrollbar {
+  width: 6px;
+}
+.slp-upload-scroll-area::-webkit-scrollbar-track {
+  background: rgba(117,82,34,.1);
+  border-radius: 3px;
+}
+.slp-upload-scroll-area::-webkit-scrollbar-thumb {
+  background: rgba(117,82,34,.4);
+  border-radius: 3px;
+}
+.slp-upload-scroll-area::-webkit-scrollbar-thumb:hover {
+  background: rgba(117,82,34,.6);
 }
 .start-info .slp-panel--lessons {
   padding: 38px 27px 22px;

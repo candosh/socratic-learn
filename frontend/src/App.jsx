@@ -633,7 +633,7 @@ export function App() {
               {/* Upload panel */}
               <section className="slp-panel slp-panel--upload" aria-label="학습 시작">
                 <SlpCorners/>
-                <div style={{ position: "relative", zIndex: 5 }}>
+                <div className="slp-upload-scroll-area" style={{ position: "relative", zIndex: 5 }}>
                   <div className="parch-stage-ribbon">1단계: 입문</div>
                   <p className="parch-upload-title">지식의 두루마리를 제출하세요</p>
                   <p className="parch-upload-desc">
