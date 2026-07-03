@@ -807,3 +807,40 @@ h1, h2, h3, p { margin-top: 0; }
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
 }
+
+/* ── Loading steps (session creation progress) ─── */
+
+.loading-steps {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: 12px; padding: 12px 14px;
+  border: 1px solid rgba(117,82,34,.35); border-radius: 3px;
+  background: rgba(210,185,130,.15);
+}
+.loading-step {
+  display: flex; align-items: center; gap: 9px;
+  font-family: var(--font); font-size: 13.5px;
+  line-height: 1.4; letter-spacing: -0.02em;
+  transition: opacity 0.2s ease;
+}
+.loading-step--active {
+  color: #3a260f;
+  font-weight: 660;
+}
+.loading-step--done {
+  color: rgba(58,38,15,.55);
+  font-weight: 540;
+}
+.loading-step-icon {
+  flex: 0 0 auto;
+  width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px;
+}
+.loading-step-label {
+  flex: 1; min-width: 0;
+}
+.loading-step-time {
+  flex: 0 0 auto;
+  font-size: 11.5px; color: rgba(58,38,15,.45);
+  font-weight: 600; letter-spacing: 0;
+}

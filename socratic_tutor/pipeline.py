@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import typer
@@ -127,7 +128,13 @@ def generate_or_load_questions(
     file_hash: str,
     config: AppConfig,
     llm_client: object,
+    on_progress: object | None = None,
 ) -> list[Question]:
+    """개념별 질문을 생성합니다. 캐시가 없으면 ThreadPoolExecutor로 병렬 생성합니다.
+
+    Args:
+        on_progress: 각 개념 완료 시 호출되는 콜백 (concept_index: int, total: int) -> None
+    """
     cached = cache_path(
         config.cache_dir,
         file_hash,
@@ -142,8 +149,10 @@ def generate_or_load_questions(
         save_json(questions, cached)
         return questions
 
-    questions: list[Question] = []
-    for concept_index, concept in enumerate(concepts, start=1):
+    total = len(concepts)
+
+    def _generate_for_concept(args: tuple) -> tuple[int, list[Question]]:
+        concept_index, concept = args
         excerpt = _excerpt_for_concept(parsed_doc, concept, markdown)
         system_prompt, user_prompt = build_question_generation_prompt(
             concept=concept,
@@ -153,11 +162,30 @@ def generate_or_load_questions(
         )
         payload = llm_client.complete_json(system_prompt, user_prompt)
         raw_questions = payload.get("questions", [])
+        qs: list[Question] = []
         for question_index, item in enumerate(raw_questions[: config.questions_per_concept], start=1):
             item = dict(item)
             item["concept_id"] = concept.concept_id
             item["question_id"] = f"q_{concept_index:03d}_{question_index:03d}"
-            questions.append(Question.model_validate(item))
+            qs.append(Question.model_validate(item))
+        return concept_index, qs
+
+    # 최대 7개 스레드로 병렬 처리 (OpenAI API는 스레드 안전)
+    results: dict[int, list[Question]] = {}
+    completed = 0
+    with ThreadPoolExecutor(max_workers=min(total, 7)) as pool:
+        futures = {pool.submit(_generate_for_concept, (i, c)): i for i, c in enumerate(concepts, start=1)}
+        for future in as_completed(futures):
+            concept_index, qs = future.result()
+            results[concept_index] = qs
+            completed += 1
+            if on_progress:
+                on_progress(completed, total)
+
+    # 원래 순서대로 정렬
+    questions: list[Question] = []
+    for i in sorted(results):
+        questions.extend(results[i])
 
     save_json(questions, cached)
     save_json(questions, document_output_dir(config, parsed_doc) / f"questions_{parsed_doc.document_id}.json")

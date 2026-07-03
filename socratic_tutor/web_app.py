@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import json
 import os
+import queue
 import shutil
+import threading
 import uuid
 from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -76,6 +79,100 @@ def create_session(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=format_pipeline_error(exc)) from exc
     return manager.snapshot(session.session_id)
+
+
+@app.post("/api/sessions/stream")
+def create_session_stream(
+    pdf: UploadFile = File(),
+    subject: str | None = Form(None),
+    difficulty: str = Form("normal"),
+    output_language: str = Form("ko"),
+    max_concepts: int = Form(7),
+    questions_per_concept: int = Form(3),
+    model: str | None = Form(None),
+    skip_cache: bool = Form(False),
+) -> StreamingResponse:
+    """세션 생성 진행 상황을 SSE(Server-Sent Events)로 실시간 스트리밍합니다.
+
+    클라이언트는 다음 형태의 이벤트를 수신합니다:
+      data: {"step": "parsing", "message": "..."}\n\n
+      data: {"step": "concepts", "message": "..."}\n\n
+      data: {"step": "questions", "message": "...", "done": 2, "total": 7}\n\n
+      data: {"step": "done", "payload": {...세션 전체 데이터...}}\n\n
+      data: {"step": "error", "message": "..."}\n\n
+    """
+    if not pdf.filename or not pdf.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="PDF 파일만 업로드할 수 있습니다.")
+
+    ensure_dir(UPLOAD_DIR)
+    target = UPLOAD_DIR / f"{Path(pdf.filename).stem}_{uuid.uuid4().hex[:8]}{Path(pdf.filename).suffix}"
+    with target.open("wb") as file:
+        shutil.copyfileobj(pdf.file, file)
+
+    # 이벤트 큐: 백그라운드 스레드 → SSE 제너레이터
+    event_queue: queue.Queue = queue.Queue()
+
+    def _sse(data: dict) -> str:
+        return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+    def _worker() -> None:
+        try:
+            event_queue.put(_sse({"step": "parsing", "message": "📜 두루마리를 해독하는 중..."}))
+
+            def on_questions_progress(done: int, total: int) -> None:
+                event_queue.put(_sse({
+                    "step": "questions",
+                    "message": f"✍️ 학문의 관문 조성 중... ({done}/{total})",
+                    "done": done,
+                    "total": total,
+                }))
+
+            session = manager.create_session(
+                pdf_path=target,
+                subject=subject,
+                difficulty=difficulty,
+                output_language=output_language,
+                max_concepts=max_concepts,
+                questions_per_concept=questions_per_concept,
+                model=model,
+                skip_cache=skip_cache,
+                on_progress={
+                    "after_parse": lambda: event_queue.put(
+                        _sse({"step": "concepts", "message": "🔍 핵심 개념 발굴 중..."})
+                    ),
+                    "after_concepts": lambda: event_queue.put(
+                        _sse({"step": "questions_start", "message": "✍️ 학문의 관문 조성 시작..."})
+                    ),
+                    "on_questions_progress": on_questions_progress,
+                },
+            )
+            snapshot = manager.snapshot(session.session_id)
+            event_queue.put(_sse({"step": "done", "payload": snapshot}))
+        except WebStudyError as exc:
+            event_queue.put(_sse({"step": "error", "message": str(exc)}))
+        except Exception as exc:
+            event_queue.put(_sse({"step": "error", "message": format_pipeline_error(exc)}))
+        finally:
+            event_queue.put(None)  # 종료 신호
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+
+    def _event_generator():
+        while True:
+            item = event_queue.get()
+            if item is None:
+                break
+            yield item
+
+    return StreamingResponse(
+        _event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Nginx 버퍼링 비활성화
+        },
+    )
 
 
 @app.get("/api/sessions/{session_id}")

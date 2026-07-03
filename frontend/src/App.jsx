@@ -413,6 +413,7 @@ export function App() {
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [loadingSteps, setLoadingSteps] = useState([]);  // {label, done, startedAt, endedAt}
   const [dismissedTransitionAnswerId, setDismissedTransitionAnswerId] = useState(null);
   const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
   const [backgroundMusicVolume, setBackgroundMusicVolume] = useState(0.32);
@@ -493,7 +494,8 @@ export function App() {
   async function startSession(event) {
     event.preventDefault();
     if (!file) { setError("학습할 PDF를 선택해주세요."); return; }
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setLoadingSteps([]);
+
     const payload = new FormData();
     payload.append("pdf", file);
     payload.append("subject", form.subject);
@@ -502,11 +504,69 @@ export function App() {
     payload.append("max_concepts", form.maxConcepts);
     payload.append("questions_per_concept", form.questionsPerConcept);
     if (form.model) payload.append("model", form.model);
+
+    const addStep = (label) => {
+      setLoadingSteps((prev) => [...prev, { label, done: false, startedAt: Date.now(), endedAt: null }]);
+    };
+    const completeStep = (label) => {
+      setLoadingSteps((prev) =>
+        prev.map((s) => s.label === label && !s.done ? { ...s, done: true, endedAt: Date.now() } : s)
+      );
+    };
+    const updateStep = (label, newLabel) => {
+      setLoadingSteps((prev) =>
+        prev.map((s, i) => i === prev.length - 1 ? { ...s, label: newLabel } : s)
+      );
+    };
+
     try {
-      const next = await request("/api/sessions", { method: "POST", body: payload });
-      setDismissedTransitionAnswerId(null); setState(next); setAnswer("");
-    } catch (err) { setError(err.message); }
-    finally { setBusy(false); }
+      const response = await fetch(`${API_BASE}/api/sessions/stream`, { method: "POST", body: payload });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || "요청을 처리하지 못했습니다.");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const text = line.replace(/^data: /, "").trim();
+          if (!text) continue;
+          let evt;
+          try { evt = JSON.parse(text); } catch { continue; }
+
+          if (evt.step === "parsing") {
+            addStep(evt.message);
+          } else if (evt.step === "concepts") {
+            completeStep("📜 두루마리를 해독하는 중...");
+            addStep(evt.message);
+          } else if (evt.step === "questions_start") {
+            completeStep("🔍 핵심 개념 발굴 중...");
+            addStep(evt.message);
+          } else if (evt.step === "questions") {
+            updateStep(null, evt.message);
+          } else if (evt.step === "done") {
+            setLoadingSteps((prev) => prev.map((s) => ({ ...s, done: true, endedAt: s.endedAt ?? Date.now() })));
+            setDismissedTransitionAnswerId(null);
+            setState(evt.payload);
+            setAnswer("");
+          } else if (evt.step === "error") {
+            throw new Error(evt.message);
+          }
+        }
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function submitAnswer(event) {
@@ -624,6 +684,21 @@ export function App() {
                         분석 시작
                       </span>
                     </button>
+                    {busy && loadingSteps.length > 0 && (
+                      <div className="loading-steps" role="status" aria-live="polite">
+                        {loadingSteps.map((step, i) => (
+                          <div key={i} className={`loading-step ${step.done ? "loading-step--done" : "loading-step--active"}`}>
+                            <span className="loading-step-icon">
+                              {step.done ? "✅" : <Loader2 className="spin" size={13}/>}
+                            </span>
+                            <span className="loading-step-label">{step.label}</span>
+                            {step.done && step.endedAt && step.startedAt && (
+                              <span className="loading-step-time">{((step.endedAt - step.startedAt) / 1000).toFixed(1)}s</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </form>
                   <div className="parch-notice">
                     텍스트가 포함된 PDF 파일만 지원됩니다. 스캔 이미지 PDF는 분석이 어려울 수 있습니다.

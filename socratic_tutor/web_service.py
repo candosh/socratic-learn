@@ -43,7 +43,16 @@ class WebStudyManager:
         output_dir: str = "./outputs",
         cache_dir: str = "./cache",
         skip_cache: bool = False,
+        on_progress: dict | None = None,
     ) -> StudySession:
+        """학습 세션을 생성합니다.
+
+        Args:
+            on_progress: 진행 단계별 콜백 딕셔너리. 다음 키를 지원합니다:
+                - "after_parse": PDF 파싱 완료 후 호출 () -> None
+                - "after_concepts": 개념 추출 완료 후 호출 () -> None
+                - "on_questions_progress": 질문 생성 진행 중 호출 (done: int, total: int) -> None
+        """
         config = load_app_config(
             pdf=str(pdf_path),
             subject=subject or None,
@@ -59,13 +68,26 @@ class WebStudyManager:
         if not config.api_key:
             raise WebStudyError("OPENAI_API_KEY가 설정되어 있지 않습니다.")
 
+        _cb = on_progress or {}
+
         llm_client = LLMClient(model=config.model, api_key=config.api_key)
         parsed_doc, file_hash = parse_or_load_pdf(config)
+
+        if cb := _cb.get("after_parse"):
+            cb()
+
         markdown_for_llm, _ = truncate_markdown(parsed_doc.markdown)
         concepts = extract_or_load_concepts(parsed_doc, markdown_for_llm, file_hash, config, llm_client)
         if not concepts:
             raise WebStudyError("핵심 개념을 추출하지 못했습니다.")
-        questions = generate_or_load_questions(parsed_doc, concepts, markdown_for_llm, file_hash, config, llm_client)
+
+        if cb := _cb.get("after_concepts"):
+            cb()
+
+        questions = generate_or_load_questions(
+            parsed_doc, concepts, markdown_for_llm, file_hash, config, llm_client,
+            on_progress=_cb.get("on_questions_progress"),
+        )
         if not questions:
             raise WebStudyError("질문을 생성하지 못했습니다.")
 
