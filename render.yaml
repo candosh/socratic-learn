@@ -1,10 +1,8 @@
 services:
   - type: web
-    name: socratic-learn
+    name: socratic-learn-api
     runtime: python
-    buildCommand: |
-      cd frontend && npm install && npm run build && cd ..
-      pip install -e .
+    buildCommand: pip install -e .
     startCommand: uvicorn socratic_tutor.web_app:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: OPENAI_API_KEY
@@ -13,3 +11,5 @@ services:
         value: gpt-4.1-mini
       - key: PYTHON_VERSION
         value: 3.11.9
+      - key: FRONTEND_URL
+        sync: false
