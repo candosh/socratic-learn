@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import uuid
 from pathlib import Path
@@ -22,9 +23,15 @@ UPLOAD_DIR = PROJECT_ROOT / "uploads"
 
 manager = WebStudyManager()
 app = FastAPI(title="Socratic Lecture Tutor Web")
+
+_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+_frontend_url = os.getenv("FRONTEND_URL", "").strip()
+if _frontend_url:
+    _origins.append(_frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
