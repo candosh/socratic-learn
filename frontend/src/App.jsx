@@ -521,6 +521,16 @@ export function App() {
 
     try {
       const response = await fetch(`${API_BASE}/api/sessions/stream`, { method: "POST", body: payload });
+
+      // 서버가 아직 /stream 엔드포인트를 모를 때 (배포 전) → 기존 방식으로 폴백
+      if (response.status === 405) {
+        addStep("📜 분석 중... (구버전 서버)");
+        const next = await request("/api/sessions", { method: "POST", body: payload });
+        setLoadingSteps((prev) => prev.map((s) => ({ ...s, done: true, endedAt: Date.now() })));
+        setDismissedTransitionAnswerId(null); setState(next); setAnswer("");
+        return;
+      }
+
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         throw new Error(err.detail || "요청을 처리하지 못했습니다.");
@@ -684,17 +694,19 @@ export function App() {
                         분석 시작
                       </span>
                     </button>
+                    {busy && (
+                      <div className="loading-reassurance" role="status" aria-live="polite">
+                        📖 파일이 크면 시간이 걸릴 수 있어요. 소크라테스가 열심히 읽는 중이니 잠시만 기다려 주세요!
+                      </div>
+                    )}
                     {busy && loadingSteps.length > 0 && (
-                      <div className="loading-steps" role="status" aria-live="polite">
+                      <div className="loading-steps" aria-live="polite">
                         {loadingSteps.map((step, i) => (
                           <div key={i} className={`loading-step ${step.done ? "loading-step--done" : "loading-step--active"}`}>
                             <span className="loading-step-icon">
                               {step.done ? "✅" : <Loader2 className="spin" size={13}/>}
                             </span>
                             <span className="loading-step-label">{step.label}</span>
-                            {step.done && step.endedAt && step.startedAt && (
-                              <span className="loading-step-time">{((step.endedAt - step.startedAt) / 1000).toFixed(1)}s</span>
-                            )}
                           </div>
                         ))}
                       </div>

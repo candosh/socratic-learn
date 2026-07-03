@@ -810,6 +810,15 @@ h1, h2, h3, p { margin-top: 0; }
 
 /* ── Loading steps (session creation progress) ─── */
 
+.loading-reassurance {
+  margin-top: 12px; padding: 10px 14px;
+  border: 1px solid rgba(117,82,34,.28); border-radius: 3px;
+  background: rgba(210,185,130,.18);
+  color: #3a260f; font-family: var(--font);
+  font-size: 13px; font-weight: 600; line-height: 1.55;
+  text-align: center;
+}
+
 .loading-steps {
   display: flex; flex-direction: column; gap: 6px;
   margin-top: 12px; padding: 12px 14px;
